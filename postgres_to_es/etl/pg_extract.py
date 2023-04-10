@@ -5,125 +5,98 @@
     записи.
 """
 
-import psycopg2
 from psycopg2.extras import DictCursor
 import collections.abc as collections_abc
 from psycopg2.extras import DictCursor
+from datetime import datetime
 
 
 class PostgresExtractor:
 
-    def __init__(self, pg_conn, batch_size, dt) -> None:
+    def __init__(self, pg_conn, batch_size, state) -> None:
         self.pg_conn = pg_conn
         self.batch_size = batch_size
-        self.dt = dt
+        self.state = state
         
     def get_ids(self, table) -> collections_abc.Iterator[list]:
         """
         Функция возвращает генератор кортежей id
         """
-        last_id = None
+        state = self.state
+        last_modified = state.get_state(table + '_last_modified') if state.get_state(table + '_last_modified') else datetime.min
         with self.pg_conn.cursor(cursor_factory=DictCursor) as curs:
             while True:
-                query = f'SELECT id FROM content.{table}'
+                last_id = state.get_state(table + '_last_id') if state.get_state(table + '_last_id') else None
+                query = f'SELECT id, modified FROM content.{table}'
                 query_args = []
                 if last_id:
-                    query += f" WHERE id > %s AND modified > %s"
+                    query += " WHERE id > %s and modified > %s"
                     query_args.append(last_id)
+                    query_args.append(last_modified)
                 else:
-                    query += f" WHERE modified > %s"
-
+                    query += " WHERE modified > %s"
+                    query_args.append(last_modified)
                 query += " ORDER BY id LIMIT %s"
-                query_args.append(self.dt)
                 query_args.append(self.batch_size)
                 curs.execute(query, query_args)
                 if not curs.rowcount:
+                    state.set_state(table + '_last_modified', str(datetime.now()))
+                    state.set_state(table + '_last_id', None)
                     break
                 batch = tuple(row[0] for row in curs.fetchall())
                 yield batch
-                last_id = batch[-1]
+                state.set_state(table + '_last_id', batch[-1])
 
         
-
     def get_filmwork_ids_for_table(self, table):
         """
         Функция принимает генератор кортежей id таблицы персон или жанров
         и возвращает генератор кортежей id связанных фильмов
         """
-        ids = self.get_ids(table)
+        generator_batch_of_ids = self.get_ids(table)
         query = f"""
-                    SELECT id
-                    FROM content.film_work
-                    WHERE id IN (
-                        SELECT film_work_id 
-                        FROM content.{table}_film_work 
-                        WHERE {table}_id IN %s);
+                    SELECT DISTINCT(film_work_id) 
+                    FROM content.{table}_film_work 
+                    WHERE {table}_id IN %s;
                 """
         with self.pg_conn.cursor(cursor_factory=DictCursor) as curs:
-            while True:
-                curs.execute(query, (next(ids),))
-                if not curs.rowcount:
-                    break
+            for batch_of_ids in generator_batch_of_ids:
+                curs.execute(query, (batch_of_ids,))
                 batch = tuple(row[0] for row in curs.fetchall())
                 yield batch
             
-    def get_updated_movies(self, filmwork_ids):
-        """
-        Функция принимает генератор кортежей id таблицы film_work
-        и возвращает генератор кортежей в которых в виде словарей представлена вся инфа о фильмах
-        """
+            
+    def get_updated_movies(self):
+        film_work_ids_by_person_generator = self.get_filmwork_ids_for_table('person')
+        film_work_ids_by_genre_generator = self.get_filmwork_ids_for_table('genre')
+        film_work_ids_by_film_work_generator = self.get_ids('film_work')
+        film_work_ids_generators = (
+            film_work_ids_by_person_generator,
+            film_work_ids_by_genre_generator,
+            film_work_ids_by_film_work_generator
+        )
         with self.pg_conn.cursor(cursor_factory=DictCursor) as curs:
-            while True:
-                curs.execute("""
-                            SELECT
-                                fw.id as fw_id, 
-                                fw.title, 
-                                fw.description, 
-                                fw.rating, 
-                                fw.type, 
-                                fw.created, 
-                                fw.modified, 
-                                pfw.role, 
-                                p.id, 
-                                p.full_name,
-                                g.name
-                            FROM content.film_work fw
-                            LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
-                            LEFT JOIN content.person p ON p.id = pfw.person_id
-                            LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
-                            LEFT JOIN content.genre g ON g.id = gfw.genre_id
-                            WHERE fw.id IN %s; 
-                        """, (next(filmwork_ids),))
-                
-                if not curs.rowcount:
-                    break
-                batch = tuple(dict(row) for row in curs.fetchall())
-                yield batch
-                
-                
-def combine_generators(*generators):
-    res = []
-    for generator in generators:
-        [res.append(item) for item in next(generator)]
-        yield tuple(res)
-                
-
-    
-def extract_updated_movies(dsl, batch_size, dt):
-    with psycopg2.connect(**dsl, cursor_factory=DictCursor) as conn:
-        extract = PostgresExtractor(conn, batch_size, dt)
-        movies_by_person = extract.get_filmwork_ids_for_table('person')
-        movies_by_genre = extract.get_filmwork_ids_for_table('genre')
-        movies_by_film_work = extract.get_ids('film_work')
-        
-        movies = combine_generators(
-                                    movies_by_person,
-                                    movies_by_genre,
-                                    movies_by_film_work)
-        
-        return extract.get_updated_movies(movies)
-
-        
-       
-        
-   
+            for filmwork_ids_generator in film_work_ids_generators:
+                for batch_ids in filmwork_ids_generator:
+                    curs.execute("""
+                                SELECT
+                                    fw.id as fw_id, 
+                                    fw.title, 
+                                    fw.description, 
+                                    fw.rating, 
+                                    fw.type, 
+                                    fw.created, 
+                                    fw.modified, 
+                                    pfw.role, 
+                                    p.id as p_id, 
+                                    p.full_name,
+                                    g.name
+                                FROM content.film_work fw
+                                LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
+                                LEFT JOIN content.person p ON p.id = pfw.person_id
+                                LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
+                                LEFT JOIN content.genre g ON g.id = gfw.genre_id
+                                WHERE fw.id IN %s; 
+                            """, (batch_ids,))
+                    batch_movies = tuple(dict(row) for row in curs.fetchall())
+                    yield batch_movies
