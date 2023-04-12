@@ -5,9 +5,8 @@
     записи.
 """
 
-from psycopg2.extras import DictCursor
 import collections.abc as collections_abc
-from psycopg2.extras import DictCursor
+from psycopg2.extras import DictCursor, RealDictCursor
 from datetime import datetime
 
 
@@ -75,28 +74,28 @@ class PostgresExtractor:
             film_work_ids_by_genre_generator,
             film_work_ids_by_film_work_generator
         )
-        with self.pg_conn.cursor(cursor_factory=DictCursor) as curs:
+        with self.pg_conn.cursor(cursor_factory=RealDictCursor) as curs:
             for filmwork_ids_generator in film_work_ids_generators:
                 for batch_ids in filmwork_ids_generator:
                     curs.execute("""
-                                SELECT
-                                    fw.id as fw_id, 
-                                    fw.title, 
-                                    fw.description, 
-                                    fw.rating, 
-                                    fw.type, 
-                                    fw.created, 
-                                    fw.modified, 
-                                    STRING_AGG(DISTINCT pfw.role, ',') as roles, 
-                                    STRING_AGG(DISTINCT CONCAT(p.id, ':', p.full_name), ',') as persons,
-                                    STRING_AGG(DISTINCT g.name, ',') as genres
+                                SELECT fw.id,
+                                    fw.rating AS imdb_rating,
+                                    array_agg(DISTINCT g.name) AS genre,
+                                    fw.title,
+                                    fw.description,
+                                    array_agg(DISTINCT p.full_name) FILTER (WHERE pf.role = 'director') AS director,
+                                    array_agg(DISTINCT jsonb_build_object('id', p.id, 'name', p.full_name)) FILTER (WHERE pf.role = 'actor') AS actors,
+                                    array_agg(DISTINCT jsonb_build_object('id', p.id, 'name', p.full_name)) FILTER (WHERE pf.role = 'writer') AS writers,
+                                    array_agg(DISTINCT p.full_name) FILTER (WHERE pf.role = 'actor') AS actors_names,
+                                    array_agg(DISTINCT p.full_name) FILTER (WHERE pf.role = 'writer') AS writers_names
                                 FROM content.film_work fw
-                                LEFT JOIN content.person_film_work pfw ON pfw.film_work_id = fw.id
-                                LEFT JOIN content.person p ON p.id = pfw.person_id
-                                LEFT JOIN content.genre_film_work gfw ON gfw.film_work_id = fw.id
-                                LEFT JOIN content.genre g ON g.id = gfw.genre_id
+                                LEFT JOIN content.genre_film_work gfw ON fw.id = gfw.film_work_id
+                                LEFT JOIN content.genre g ON gfw.genre_id = g.id
+                                LEFT JOIN content.person_film_work pf ON fw.id = pf.film_work_id
+                                LEFT JOIN content.person p ON pf.person_id = p.id
                                 WHERE fw.id IN %s
-                                GROUP BY fw.id, fw.title, fw.description, fw.rating, fw.type, fw.created, fw.modified 
+                                GROUP BY fw.id, fw.title, fw.description, fw.rating
+                                ORDER BY fw.title;
                             """, (batch_ids,))
-                    batch_movies = tuple(dict(row) for row in curs.fetchall())
+                    batch_movies = [row for row in curs.fetchall()]
                     yield batch_movies
