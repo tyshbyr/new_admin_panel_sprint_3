@@ -1,0 +1,34 @@
+version: '3'
+services:
+  db:
+    image: postgres:13
+    volumes:
+      - simple_project_db_volume:/var/lib/postgresql/data/
+    env_file:
+      - .env
+
+  elasticsearch:
+    image: ghcr.io/yp-middle-python-24/elasticsearch:8.7.0
+    environment:
+      - "discovery.type=single-node"
+      - "xpack.security.enabled=false"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    env_file:
+      - .env
+    expose:
+      - 9200
+
+  etl:
+    env_file:
+      - .env
+    build: postgres_to_es
+    depends_on:
+      - db
+      - elasticsearch
+
+volumes:
+  simple_project_db_volume:
+    external:
+      True
+  elasticsearch-data:

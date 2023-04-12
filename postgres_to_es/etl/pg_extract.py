@@ -1,15 +1,30 @@
 import collections.abc as collections_abc
 from psycopg2.extras import DictCursor, RealDictCursor
 from datetime import datetime
+import psycopg2
+import backoff
+from settings import etl_settings, logger
+from psycopg2 import DatabaseError, OperationalError, ProgrammingError
+import logging
 
+
+backoff_max_time = etl_settings.backoff_max_time
 
 class PostgresExtractor:
 
-    def __init__(self, pg_conn, batch_size, state) -> None:
-        self.pg_conn = pg_conn
+    def __init__(self, batch_size, state,) -> None:
+        self.pg_conn = None
         self.batch_size = batch_size
         self.state = state
+    
+    @backoff.on_exception(backoff.expo, OperationalError, max_time=backoff_max_time, logger=logger)    
+    def pg_connect(self, dsl):
+        self.pg_conn = psycopg2.connect(**dsl)
         
+    def pg_close(self):
+        self.pg_conn.close()
+        
+    @backoff.on_exception(backoff.expo, (DatabaseError, ProgrammingError), max_time=backoff_max_time, logger=logger)   
     def get_ids(self, table) -> collections_abc.Iterator[list]:
         """
         Функция возвращает генератор кортежей id
@@ -39,7 +54,7 @@ class PostgresExtractor:
                 yield batch
                 state.set_state(table + '_last_id', batch[-1])
 
-        
+    @backoff.on_exception(backoff.expo, (DatabaseError, ProgrammingError), max_time=backoff_max_time, logger=logger)    
     def get_filmwork_ids_for_table(self, table):
         """
         Функция принимает генератор кортежей id таблицы персон или жанров
@@ -57,7 +72,7 @@ class PostgresExtractor:
                 batch = tuple(row[0] for row in curs.fetchall())
                 yield batch
             
-            
+    @backoff.on_exception(backoff.expo, (DatabaseError, ProgrammingError), max_time=backoff_max_time, logger=logger)        
     def get_updated_movies(self):
         film_work_ids_by_person_generator = self.get_filmwork_ids_for_table('person')
         film_work_ids_by_genre_generator = self.get_filmwork_ids_for_table('genre')

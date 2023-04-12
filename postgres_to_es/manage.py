@@ -1,19 +1,28 @@
-from settings import dsl, BATCH_SIZE
+from settings import pg_settings, etl_settings, es_settings, logger
 from etl.pg_extract import PostgresExtractor
-import psycopg2
 from etl.state_etl import JsonFileStorage, State
-import psycopg2.extras
 from etl.es_load import ElasticsearchLoader
+import time
+import backoff
 
 
-batch_size = BATCH_SIZE
-storage = JsonFileStorage('storage.txt')
-state = State(storage)
-loader = ElasticsearchLoader('movies', es_host='127.0.0.1', es_port=9200)
+backoff_max_time = etl_settings.backoff_max_time
 
-with psycopg2.connect(**dsl) as conn:
-        extract = PostgresExtractor(conn, batch_size, state)
+@backoff.on_exception(backoff.expo, Exception, max_time=backoff_max_time, logger=logger) 
+def etl():
+    while True:
+        storage = JsonFileStorage(etl_settings.state_file)
+        state = State(storage)
+        loader = ElasticsearchLoader(es_settings.index_name)
+        loader.es_connect(es_settings.scheme, es_settings.host, es_settings.port)
+        extract = PostgresExtractor(etl_settings.batch_size, state)
+        extract.pg_connect(pg_settings.dict())
         batch_movies_generator = extract.get_updated_movies()
-        movies = []
         for batch in batch_movies_generator:
-            loader.load_movies(batch, batch_size)
+            loader.load_movies(batch, etl_settings.batch_size)
+        extract.pg_close()
+        print('Ok!')
+        time.sleep(etl_settings.timeout)
+
+if __name__ == '__main__':
+    etl()

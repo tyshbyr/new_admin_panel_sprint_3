@@ -13,7 +13,6 @@ class Person:
 
 @dataclass
 class Movie:
-    #_id: UUID
     id: UUID
     imdb_rating: float
     genre: List[str]
@@ -26,7 +25,6 @@ class Movie:
     writers_names: List[str]
 
     def __init__(self, row):
-        #self._id = UUID(row['id'])
         self.id = UUID(row['id'])
         self.imdb_rating = row['imdb_rating']
         self.genre = row['genre']
@@ -46,7 +44,6 @@ class Movie:
         
     def as_dict(self):
         return {
-            #'_id': str(self._id),
             'id': str(self.id),
             'imdb_rating': self.imdb_rating,
             'genre': self.genre,
