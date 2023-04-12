@@ -1,10 +1,3 @@
-"""
-    Получает данные из Postgress пачками.
-    Обрабатывает падение Postgres.
-    После падения Postgres начинает читать с последней обработанной
-    записи.
-"""
-
 import collections.abc as collections_abc
 from psycopg2.extras import DictCursor, RealDictCursor
 from datetime import datetime
