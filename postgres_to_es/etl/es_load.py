@@ -4,6 +4,7 @@ from typing import Generator
 from etl.transform import Movie
 import logging
 
+
 class ElasticsearchLoader:
     def __init__(self, index_name: str, es_host: str = 'localhost', es_port: int = 9200):
         self.index_name = index_name
@@ -27,14 +28,12 @@ class ElasticsearchLoader:
       documents = [{'_index': self.index_name, '_id': doc.get('id'), "_source": doc} for doc in docs]
       try:
           rows_count, errors = bulk(self.es, documents)
+          print(rows_count, '\n', errors)
       except BulkIndexError as err:
         logging.exception("BulkIndexError occurred, errors: %s", err.errors)
-
         for error in err.errors:
           logging.error("error: %s, value: %s", error.get('error'), error.get('index'))
-          print()
         
- 
     def _create_index(self):
         self.es.indices.create(index=self.index_name, body={
   "settings": {

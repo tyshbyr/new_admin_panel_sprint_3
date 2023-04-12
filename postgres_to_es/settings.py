@@ -11,5 +11,4 @@ dsl = {
     'host': os.environ.get('DB_HOST'),
     'port': os.environ.get('DB_PORT')}
 
-EXTRACT_BATCH_SIZE = os.environ.get('EXTRACT_BATCH_SIZE')
-LOAD_BATCH_SIZE = os.environ.get('LOAD_BATCH_SIZE')
+BATCH_SIZE = os.environ.get('EXTRACT_BATCH_SIZE')

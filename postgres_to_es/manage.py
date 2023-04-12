@@ -1,4 +1,4 @@
-from settings import dsl, EXTRACT_BATCH_SIZE
+from settings import dsl, BATCH_SIZE
 from etl.pg_extract import PostgresExtractor
 import psycopg2
 from etl.state_etl import JsonFileStorage, State
@@ -6,7 +6,7 @@ import psycopg2.extras
 from etl.es_load import ElasticsearchLoader
 
 
-batch_size = EXTRACT_BATCH_SIZE
+batch_size = BATCH_SIZE
 storage = JsonFileStorage('storage.txt')
 state = State(storage)
 loader = ElasticsearchLoader('movies', es_host='127.0.0.1', es_port=9200)
