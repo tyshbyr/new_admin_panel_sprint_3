@@ -1,9 +1,11 @@
 version: '3'
 services:
   db:
+    container_name: postgres_db
     image: postgres:13
     volumes:
-      - simple_project_db_volume:/var/lib/postgresql/data/
+      - db_volume:/var/lib/postgresql/data/
+      - ./db_dump.sql:/db_dump.sql
     env_file:
       - .env
 
@@ -28,7 +30,5 @@ services:
       - elasticsearch
 
 volumes:
-  simple_project_db_volume:
-    external:
-      True
+  db_volume:
   elasticsearch-data:

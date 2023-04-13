@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from typing import List
 from uuid import UUID
 
+
 @dataclass
 class Person:
     id: UUID
     name: str
-    
+
     def as_dict(self):
         return {'id': str(self.id), 'name': self.name}
 
@@ -32,16 +33,18 @@ class Movie:
         self.description = row['description']
         self.director = row['director'] if row['director'] else ''
         if row['actors'] is not None:
-            self.actors = [Person(UUID(actor['id']), actor['name']) for actor in row['actors']]
+            self.actors = [Person(UUID(actor['id']), actor['name'])
+                           for actor in row['actors']]
         else:
             self.actors = []
         if row['writers'] is not None:
-            self.writers = [Person(UUID(writer['id']), writer['name']) for writer in row['writers']]
+            self.writers = [Person(UUID(writer['id']), writer['name'])
+                            for writer in row['writers']]
         else:
             self.writers = []
         self.actors_names = row['actors_names']
         self.writers_names = row['writers_names']
-        
+
     def as_dict(self):
         return {
             'id': str(self.id),

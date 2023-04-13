@@ -1,5 +1,6 @@
-from pydantic import BaseSettings, Field
 import logging
+
+from pydantic import BaseSettings, Field
 
 
 class PgSettings(BaseSettings):
